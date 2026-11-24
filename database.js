@@ -216,16 +216,29 @@ export async function sendFriendRequest(targetUid, targetSettings) {
   const incoming = store.incomingRequests.find(r => r.fromUid === targetUid);
   if (incoming) throw new Error('This person already sent you a request — accept it instead.');
 
-  // Duplicate prevention via deterministic id.
+  // Duplicate prevention via deterministic id. Any previous request document
+  // (cancelled / declined) is removed first so the fresh request is a true
+  // create under the security rules. When the target's policy allows
+  // automatic acceptance, the request is created pre-accepted and the
+  // friendship document is written directly (mirrored by rules).
+  const needsApproval = targetSettings?.requireFriendApproval !== false;
   const dupId = `${store.uid}_${targetUid}`;
+  await deleteDoc(doc(db(), 'friendRequests', dupId)).catch(() => {});
   await setDoc(doc(db(), 'friendRequests', dupId), {
-    fromUid: store.uid, toUid: targetUid, status: 'pending', createdAt: serverTimestamp(),
+    fromUid: store.uid, toUid: targetUid,
+    status: needsApproval ? 'pending' : 'accepted',
+    createdAt: serverTimestamp(),
   });
 
-  const needsApproval = targetSettings?.requireFriendApproval !== false;
   if (!needsApproval) {
-    // The recipient's policy allows automatic acceptance.
-    await acceptFriendRequestCore({ id: dupId, fromUid: store.uid, toUid: targetUid }, true);
+    const [a, b] = [store.uid, targetUid].sort();
+    await setDoc(doc(db(), 'friendships', `${a}_${b}`), { users: [a, b], createdAt: serverTimestamp() }, { merge: true });
+    await loadFriendState();
+    notify([targetUid], {
+      type: 'friend-accepted', title: 'Friend added',
+      body: `${store.me.displayName} (@${store.me.username}) is now your friend`,
+      link: 'friends', actorUid: store.uid,
+    });
     return { autoAccepted: true };
   }
   notify([targetUid], {
@@ -236,18 +249,20 @@ export async function sendFriendRequest(targetUid, targetSettings) {
   return { autoAccepted: false };
 }
 
-async function acceptFriendRequestCore(request, auto = false) {
+async function acceptFriendRequestCore(request) {
   const [a, b] = [request.fromUid, request.toUid].sort();
-  const batch = writeBatch(db());
-  batch.set(doc(db(), 'friendships', `${a}_${b}`), { users: [a, b], createdAt: serverTimestamp() }, { merge: true });
-  batch.update(doc(db(), 'friendRequests', request.id), { status: 'accepted', updatedAt: serverTimestamp() }).catch?.(() => {});
-  await batch.commit().catch(async () => {
-    // friendRequests doc may not exist for auto-accept path (set above with merge) — retry piecewise
+  try {
+    const batch = writeBatch(db());
+    batch.set(doc(db(), 'friendships', `${a}_${b}`), { users: [a, b], createdAt: serverTimestamp() }, { merge: true });
+    batch.update(doc(db(), 'friendRequests', request.id), { status: 'accepted', updatedAt: serverTimestamp() });
+    await batch.commit();
+  } catch {
+    // Piecewise fallback (e.g. the request doc was removed concurrently).
     await setDoc(doc(db(), 'friendships', `${a}_${b}`), { users: [a, b], createdAt: serverTimestamp() }, { merge: true });
     await updateDoc(doc(db(), 'friendRequests', request.id), { status: 'accepted', updatedAt: serverTimestamp() }).catch(() => {});
-  });
+  }
   await loadFriendState();
-  if (!auto) notify([request.fromUid], {
+  notify([request.fromUid], {
     type: 'friend-accepted', title: 'Friend request accepted',
     body: `${store.me.displayName} is now your friend`,
     link: 'friends', actorUid: store.uid,
@@ -385,6 +400,9 @@ export async function inviteToGroup(conv, uid, targetSettings, inviterIsAdmin) {
   const existing = store.groupInvites.find(i => i.id === iid && i.status === 'pending');
   if (existing) throw new Error('An invitation is already pending.');
   const needsApproval = targetSettings?.requireGroupApproval !== false;
+  // Remove any previous (declined / cancelled) invitation doc so the fresh
+  // invitation is a true create under the security rules.
+  await deleteDoc(doc(db(), 'groupInvitations', iid)).catch(() => {});
   await setDoc(doc(db(), 'groupInvitations', iid), {
     id: iid, groupId: conv.id, groupName: conv.group?.name || 'a group',
     fromUid: store.uid, toUid: uid,
