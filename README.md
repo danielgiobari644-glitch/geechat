@@ -11,7 +11,8 @@ GeeChat is a complete, production-ready real-time messaging platform with a prem
 | `index.html` | Welcome/auth page + application shell (single-page app) |
 | `styles.css` | Full glassmorphism design system, light + dark themes, responsive |
 | `app.js` | Bootstrap, router, dashboard (sidebar / conversation list / workspace) |
-| `firebase.js` | Platform configuration (auth, data, media, GIF, push constants) |
+| `firebase-config.js` | **All platform keys in one place — the only file you edit** (Firebase, media, GIF, push) |
+| `firebase.js` | Platform bootstrap + health check; reads `firebase-config.js` |
 | `auth.js` | Register, login, Google sign-in, password reset, logout |
 | `database.js` | Data layer: profiles, presence, friendships, conversations, messages, polls, quizzes |
 | `chat.js` | Messaging workspace, composer, receipts, reactions, replies, edits, forwarding |
@@ -63,20 +64,44 @@ firebase deploy --only firestore:rules,firestore:indexes
 The media service is pre-configured (cloud `l5inkfvz`, unsigned preset `GeeChat`). In the media console, ensure the preset **GeeChat** is **unsigned** and set *Asset type* to **Auto** (or create per-type presets) so video/audio/document uploads are accepted. The API secret never touches the browser — uploads are unsigned by design.
 
 ### Step 5 — Background push (optional but recommended)
-1. Console → **Project settings → Cloud Messaging → Web Push certificates** → generate a key and paste it into `VAPID_PUBLIC_KEY` in `firebase.js`.
+1. Console → **Project settings → Cloud Messaging → Web Push certificates** → generate a key and paste it into `vapidPublicKey` in `firebase-config.js`.
 2. Deploy Cloud Functions (see §4) — they send pushes when messages/notifications arrive, honouring each recipient's notification settings.
 Without the VAPID key the app still shows foreground notifications and in-app alerts; background push simply cannot subscribe — the app says so honestly in Settings → Notifications.
 
-## 3. Configuration reference
+## 3. Configuration reference — connect your own Firebase project
 
-All configuration lives at the top of `firebase.js`:
-- `firebaseConfig` — exact project configuration supplied by the owner.
-- `MEDIA_CLOUD_NAME` / `MEDIA_UPLOAD_PRESET` — media delivery.
-- `GIF_API_KEY` — GIF discovery service credential (already working).
-- `VAPID_PUBLIC_KEY` — Web Push certificate (deployment step 5).
-- `LIMITS` — upload size caps per media kind. Adjust to taste.
+Every external service credential lives in **`firebase-config.js`** (loaded by the page, both service workers and `firebase.js`):
 
-> ⚠️ **Owner action required:** the supplied Web API key was rejected by Google during pre-launch verification (`API_KEY_INVALID`). Sign-in and data access will fail until a valid key from **Project settings → General → Web API Key** is present in `firebaseConfig.apiKey`. Everything else in this build was verified against the live services.
+```js
+self.GEECHAT_CONFIG = {
+  firebaseConfig: { apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId, measurementId },
+  media:  { cloudName, uploadPreset },   // media uploads
+  gif:    { apiKey },                    // GIF discovery
+  vapidPublicKey: "",                    // background web push
+};
+```
+
+### Connecting your own project (step by step)
+1. Create a free project at **console.firebase.google.com** (the Spark plan is enough).
+2. **Build → Authentication → Get started** → enable **Email/Password** and **Google**.
+3. **Build → Firestore Database** → create a database in **production mode**, then deploy the bundled rules and indexes (§2 Step 3).
+4. **Project settings → General → Your apps → Web (</>)** → register an app → copy the `firebaseConfig` values.
+5. Open **`firebase-config.js`** and replace the `firebaseConfig` block with your values (and `vapidPublicKey` if you enable push).
+6. **Authentication → Settings → Authorized domains** → add the domain you host the app on (localhost works by default).
+7. Reload the app. If the configuration is still invalid you get a setup screen with a **Retry connection** button — the app checks the key against Google's identity endpoint on every boot.
+
+### Troubleshooting
+
+| Symptom | Cause → fix |
+| --- | --- |
+| `API key not valid` / `API_KEY_INVALID` 400 from `identitytoolkit.googleapis.com` | The API key itself is rejected (revoked or from a deleted project) — not a permissions issue. Replace the whole `firebaseConfig` block in `firebase-config.js` with your own project's values; there is no way to repair someone else's key. |
+| Setup screen appears on every boot | Same as above, or missing fields (`apiKey`, `authDomain`, `projectId`, `appId`). Follow the steps above, then press **Retry connection**. |
+| `auth/unauthorized-domain` | Your domain isn't whitelisted → **Authentication → Settings → Authorized domains** → add it. |
+| `auth/configuration-not-found` | Email/Password sign-in isn't enabled → **Authentication → Sign-in method**. |
+| The page itself 404s (e.g. hosting the app under `/geechat/`) | Your host doesn't serve `index.html` for that path. Upload the files so that `…/geechat/` resolves to `index.html` (most static hosts do this automatically for a folder upload). All asset references, the manifest and the service workers are relative since v2, so any subpath works once the entry file is served. |
+| Stale app after editing `firebase-config.js` | The shell service worker caches assets — bump `VERSION` in `sw.js` (or unregister it in DevTools → Application → Service Workers) and hard-refresh. |
+
+> ⚠️ **Owner action required:** the shipped Firebase config is a placeholder — Google rejects its key with `API_KEY_INVALID`, so the app shows the setup screen until you connect your own project (steps above). Everything else in this build was verified against the live services.
 
 ## 4. Cloud Functions (`functions.js`)
 

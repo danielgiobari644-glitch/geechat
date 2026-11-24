@@ -1,5 +1,5 @@
 // GeeChat — application bootstrap, routing and the main dashboard.
-import { fs as fb, VAPID_PUBLIC_KEY, APP_VERSION } from './firebase.js';
+import { fs as fb, VAPID_PUBLIC_KEY, APP_VERSION, checkPlatform } from './firebase.js';
 import {
   store, subscribeConversations, subscribeUser, tsVal,
   discoverGroups, searchUsers, ensureDm, ensureJoinRequest,
@@ -49,14 +49,71 @@ qsa('.theme-pill').forEach(btn => {
 });
 
 // ---------- boot ----------
-initAuthUI();
-initAuth({
-  onReady: async (authed) => {
-    qs('#splash').remove();
-    if (authed) await enterApp();
-    else showAuthView();
-  },
-});
+// Verify the platform configuration before wiring authentication: with an
+// invalid Firebase API key the app shows a guided setup screen instead of
+// failing with cryptic 400 errors from identitytoolkit.
+(async () => {
+  const status = await checkPlatform();
+  qs('#splash')?.remove();
+  if (!status.ok) { showSetupScreen(status); return; }
+  initAuthUI();
+  initAuth({
+    onReady: async (authed) => {
+      if (authed) await enterApp();
+      else showAuthView();
+    },
+  });
+})();
+
+// ---------- setup screen (bad / missing platform configuration) ----------
+function showSetupScreen(status) {
+  const REASONS = {
+    apiKey: 'Google rejected the bundled Firebase API key ("API key not valid"). The app needs the credentials of its own Firebase project before anyone can sign in.',
+    project: 'Google did not accept the Firebase project referenced in the configuration — the project may have been deleted or the values pasted incorrectly.',
+    config: 'The configuration in firebase-config.js is missing required Firebase fields.',
+  };
+  const reason = REASONS[status.code] || 'The platform configuration could not be verified.';
+  const missing = status.missing?.length
+    ? el('p', { class: 'setup-missing', text: `Missing: ${status.missing.join(', ')}` }) : null;
+
+  const steps = [
+    'Create a free project at console.firebase.google.com.',
+    'Build → Authentication → Get started → enable Email/Password (and Google, if wanted).',
+    'Build → Firestore Database → Create database (production mode).',
+    'Project settings → General → Your apps → Web (</>) → register an app → copy the firebaseConfig values.',
+    'Open firebase-config.js and replace the firebaseConfig block with them.',
+    'Authentication → Settings → Authorized domains → add the domain the app is hosted on.',
+    'Deploy the included firestore.rules and firestore.indexes.json (see README).',
+  ];
+  const list = el('ol', { class: 'setup-steps' },
+    steps.map(s => el('li', { text: s })));
+
+  const retryBtn = el('button', { class: 'btn-small setup-retry' },
+    icon('refresh-cw', 'ic-16'), el('span', { text: 'Retry connection' }));
+  retryBtn.addEventListener('click', async () => {
+    retryBtn.disabled = true;
+    const again = await checkPlatform(true);
+    if (again.ok) { location.reload(); return; }
+    status.code = again.code;
+    reasonNode.textContent = REASONS[again.code] || REASONS.config;
+    missingNote.classList.remove('hidden');
+    retryBtn.disabled = false;
+  });
+  const reasonNode = el('p', { class: 'setup-reason', text: reason });
+  const missingNote = el('p', { class: 'setup-missing hidden', text: 'Still failing — re-check every value in firebase-config.js, then reload.' });
+
+  const view = el('div', { class: 'setup-view', id: 'setupView' },
+    el('div', { class: 'setup-card' },
+      el('div', { class: 'setup-badge' }, icon('key-round')),
+      el('h1', { text: 'Connect GeeChat to Firebase' }),
+      reasonNode, missing, missingNote,
+      list,
+      el('div', { class: 'setup-foot' }, retryBtn,
+        el('span', { class: 'setup-hint', text: 'After saving firebase-config.js, press Retry (a hard refresh may be needed).' })),
+    ),
+  );
+  document.body.append(view);
+}
 
 async function enterApp() {
   qs('#authView').classList.add('hidden');

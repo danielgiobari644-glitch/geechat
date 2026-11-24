@@ -1,17 +1,11 @@
 /* GeeChat — background push service worker (messaging).
-   Displays push notifications when the app is closed or backgrounded. */
+   Displays push notifications when the app is closed or backgrounded.
+   Configuration is shared with the app through firebase-config.js. */
+importScripts('./firebase-config.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
 
-firebase.initializeApp({
-  apiKey: "AIzaSyCN3C3s7c37-o-9XoV0CcM72RgydcpbTFk",
-  authDomain: "geechat-com.firebaseapp.com",
-  projectId: "geechat-com",
-  storageBucket: "geechat-com.firebasestorage.app",
-  messagingSenderId: "792018335741",
-  appId: "1:792018335741:web:3b43c1f823aba32a50cb94",
-  measurementId: "G-493C40NG2Q"
-});
+firebase.initializeApp(self.GEECHAT_CONFIG.firebaseConfig);
 
 const messaging = firebase.messaging();
 

@@ -1,37 +1,50 @@
 // GeeChat — platform bootstrap (messaging infrastructure configuration)
 // Central configuration for authentication, realtime data, media delivery
 // and GIF discovery. The interface never mentions infrastructure vendors.
+// The actual keys live in firebase-config.js — the ONLY file you edit.
+import './firebase-config.js';
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, browserSessionPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
-// ---- Project configuration (supplied by the application owner) -------------
-export const firebaseConfig = {
-  apiKey: "AIzaSyCN3C3s7c37-o-9XoV0CcM72RgydcpbTFk",
-  authDomain: "geechat-com.firebaseapp.com",
-  projectId: "geechat-com",
-  storageBucket: "geechat-com.firebasestorage.app",
-  messagingSenderId: "792018335741",
-  appId: "1:792018335741:web:3b43c1f823aba32a50cb94",
-  measurementId: "G-493C40NG2Q"
-};
+// ---- Platform configuration (from firebase-config.js) ------------------------
+const CFG = (self.GEECHAT_CONFIG && typeof self.GEECHAT_CONFIG === 'object')
+  ? self.GEECHAT_CONFIG : {};
 
-// ---- Media delivery ---------------------------------------------------------
-export const MEDIA_CLOUD_NAME = "l5inkfvz";
-export const MEDIA_UPLOAD_PRESET = "GeeChat";
-export const MEDIA_BASE = `https://api.cloudinary.com/v1_1/${MEDIA_CLOUD_NAME}`;
-
-// ---- GIF discovery (KLIPY) ---------------------------------------------------
-export const GIF_API_KEY = "ddGjH8uBxWK1368f7Ha4NNsjsKacFgbT2WpmPIWK19opNUDlhQSM6PCluGstFRCe";
+export const firebaseConfig = CFG.firebaseConfig || {};
+export const MEDIA_CLOUD_NAME = CFG.media?.cloudName || '';
+export const MEDIA_UPLOAD_PRESET = CFG.media?.uploadPreset || '';
+export const MEDIA_BASE = MEDIA_CLOUD_NAME ? `https://api.cloudinary.com/v1_1/${MEDIA_CLOUD_NAME}` : '';
+export const GIF_API_KEY = CFG.gif?.apiKey || '';
 export const GIF_API_BASE = "https://api.klipy.com/api/v1";
+export const VAPID_PUBLIC_KEY = CFG.vapidPublicKey || "";
 
-// ---- Web Push ---------------------------------------------------------------
-// A Web Push certificate (VAPID) key must be created in the messaging console
-// (Project settings → Cloud Messaging → Web Push certificates) and pasted here
-// for background push notifications to subscribe. Empty means foreground
-// notifications still work, but background push cannot register.
-export const VAPID_PUBLIC_KEY = "";
+// ---- Platform health check -----------------------------------------------------
+// The first time the app boots it verifies the configuration against Google's
+// identity endpoint — the same call the Firebase SDK makes internally — so a
+// bad API key surfaces as a clear setup screen instead of silent 400 errors.
+let platformCheck = null;
+export function checkPlatform(force = false) {
+  if (platformCheck && !force) return platformCheck;
+  platformCheck = (async () => {
+    const required = ['apiKey', 'authDomain', 'projectId', 'appId'];
+    const missing = required.filter(k => !firebaseConfig[k]);
+    if (missing.length) return { ok: false, code: 'config', missing };
+    let res;
+    try {
+      res = await fetch(`https://identitytoolkit.googleapis.com/v1/projects?key=${encodeURIComponent(firebaseConfig.apiKey)}`);
+    } catch {
+      // Network hiccup at boot: don't block the app on an offline probe.
+      return { ok: true, code: 'network-unverified' };
+    }
+    if (res.ok) return { ok: true, code: '' };
+    const body = await res.json().catch(() => ({}));
+    const blob = [body.error?.message, JSON.stringify(body.error?.details || [])].join(' ');
+    return { ok: false, code: /API_KEY_INVALID|API key not valid/i.test(blob) ? 'apiKey' : 'project' };
+  })();
+  return platformCheck;
+}
 
 // ---- App constants -----------------------------------------------------------
 export const APP_VERSION = "1.0.0";
@@ -93,6 +106,11 @@ export function friendlyAuthError(code) {
     'auth/unauthorized-domain': 'This domain isn\'t authorised yet. Add it in the console under Authentication → Settings → Authorized domains.',
     'auth/operation-not-allowed': 'This sign-in method isn\'t enabled yet. Enable it in Authentication → Sign-in method.',
     'auth/admin-restricted-operation': 'Registration is restricted by the administrator.',
+    'auth/invalid-api-key': 'The Firebase API key is not valid. Open firebase-config.js and paste your own project\'s config (see README).',
+    'auth/api-key-not-valid': 'The Firebase API key is not valid. Open firebase-config.js and paste your own project\'s config (see README).',
+    'auth/api-key-not-valid.-please-pass-a-valid-api-key.': 'The Firebase API key is not valid. Open firebase-config.js and paste your own project\'s config (see README).',
+    'auth/project-not-found': 'The Firebase project was not found. Check the projectId in firebase-config.js.',
+    'auth/configuration-not-found': 'Email sign-in is not enabled for this project. Enable it in Authentication → Sign-in method.',
   };
   return map[code] || 'Something went wrong. Please try again.';
 }
