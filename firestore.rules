@@ -1,0 +1,290 @@
+rules_version = '2';
+
+// GeeChat — Firestore Security Rules.
+// Enforcement summary: authentication everywhere; ownership and membership on
+// every read/write; invitations gate group membership; only senders may edit
+// or delete their own messages; votes and attempts are structurally validated.
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    // ---------- helpers ----------
+    function signedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function userDoc(u) { return get(/databases/$(db)/documents/users/$(u)).data; }
+    function convDoc(c) { return get(/databases/$(db)/documents/conversations/$(c)).data; }
+
+    // ---------- users ----------
+    match /users/{userId} {
+      // Profiles are discoverable by username search; nothing secret is stored here.
+      allow read: if signedIn();
+      allow create: if signedIn() && userId == uid()
+        && request.resource.data.uid == uid()
+        && request.resource.data.username is string
+        && request.resource.data.username.size() >= 3
+        && request.resource.data.username.size() <= 20
+        && request.resource.data.usernameLower == request.resource.data.username.lower()
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() >= 1
+        && request.resource.data.displayName.size() <= 40;
+      // Only the owner may edit a profile, and never its identity fields.
+      allow update: if signedIn() && userId == uid()
+        && changed().hasOnly(['displayName', 'bio', 'photoURL', 'settings', 'online', 'lastSeen']);
+      allow delete: if signedIn() && userId == uid();
+    }
+
+    // ---------- usernames (unique reservation) ----------
+    match /usernames/{name} {
+      allow read: if signedIn();
+      // A username can only be claimed while pointing at the caller.
+      allow create: if signedIn() && request.resource.data.uid == uid();
+      allow update, delete: if signedIn() && resource.data.uid == uid();
+    }
+
+    // ---------- friend requests ----------
+    match /friendRequests/{reqId} {
+      allow read: if signedIn() && (resource.data.fromUid == uid() || resource.data.toUid == uid());
+      allow create: if signedIn()
+        && reqId == request.resource.data.fromUid + '_' + request.resource.data.toUid
+        && request.resource.data.fromUid == uid()
+        && request.resource.data.toUid != uid()
+        && request.resource.data.status == 'pending'
+        && exists(/databases/$(db)/documents/users/$(request.resource.data.toUid))
+        // neither party has blocked the other
+        && !exists(/databases/$(db)/documents/blocks/$(uid() + '_' + request.resource.data.toUid))
+        && !exists(/databases/$(db)/documents/blocks/$(request.resource.data.toUid + '_' + uid()));
+      allow update: if signedIn()
+        && (resource.data.fromUid == uid() || resource.data.toUid == uid())
+        && changed().hasOnly(['status', 'updatedAt'])
+        && request.resource.data.status in ['pending', 'accepted', 'declined', 'cancelled'];
+      allow delete: if signedIn() && (resource.data.fromUid == uid() || resource.data.toUid == uid());
+    }
+
+    // ---------- friendships ----------
+    match /friendships/{fid} {
+      allow read: if signedIn() && uid() in resource.data.users;
+      allow create: if signedIn()
+        && request.resource.data.users.size() == 2
+        && uid() in request.resource.data.users;
+      allow update: if false;
+      allow delete: if signedIn() && uid() in resource.data.users;
+    }
+
+    // ---------- blocks ----------
+    match /blocks/{bid} {
+      allow read: if signedIn() && resource.data.blocker == uid();
+      allow create: if signedIn() && request.resource.data.blocker == uid() && request.resource.data.blocked != uid();
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.blocker == uid();
+    }
+
+    // ---------- conversations (DMs and groups) ----------
+    match /conversations/{cid} {
+      function isParticipant() { return signedIn() && uid() in resource.data.participants; }
+      function isAdmin() { return signedIn() && resource.data.members[uid()].role in ['owner', 'admin']; }
+
+      allow read: if isParticipant();
+
+      allow create: if signedIn() && (
+        // Direct conversation between two registered, non-blocked users
+        (request.resource.data.type == 'dm'
+          && request.resource.data.participants.size() == 2
+          && uid() in request.resource.data.participants
+          && (cid == request.resource.data.participants[0] + '__' + request.resource.data.participants[1]
+            || cid == request.resource.data.participants[1] + '__' + request.resource.data.participants[0])
+          && exists(/databases/$(db)/documents/users/$(dmOther()))
+          && !exists(/databases/$(db)/documents/blocks/$(uid() + '_' + dmOther()))
+          && !exists(/databases/$(db)/documents/blocks/$(dmOther() + '_' + uid())))
+        ||
+        // Group created by its owner
+        (request.resource.data.type == 'group'
+          && request.resource.data.group.ownerId == uid()
+          && uid() in request.resource.data.group.admins
+          && request.resource.data.members[uid()].role == 'owner'
+          && request.resource.data.group.privacy in ['public', 'private']
+          && request.resource.data.group.name is string
+          && request.resource.data.group.name.size() >= 1
+          && request.resource.data.group.name.size() <= 60)
+      );
+      function dmOther() {
+        return request.resource.data.participants[0] == uid()
+          ? request.resource.data.participants[1]
+          : request.resource.data.participants[0];
+      }
+
+      allow update: if isParticipant() && (
+        // Unread counters, last message preview, delivery / read markers
+        changed().hasOnly(['unread', 'lastMessage', 'updatedAt', 'deliveredAt', 'readAt'])
+        // Admin: role map and admin list
+        || (isAdmin() && changed().hasOnly(['members', 'group.admins', 'updatedAt']))
+        // Admin: group info edits
+        || (isAdmin() && changed().hasOnly(['group', 'updatedAt', 'lastMessage.displayName']))
+        // Membership addition — only with an accepted invitation on file
+        || (changed().hasOnly(['participants', 'members', 'unread', 'updatedAt', 'lastAdded'])
+          && request.resource.data.participants.size() == resource.data.participants.size() + 1
+          && request.resource.data.lastAdded is string
+          && request.resource.data.lastAdded in request.resource.data.participants
+          && !(request.resource.data.lastAdded in resource.data.participants)
+          && get(/databases/$(db)/documents/groupInvitations/inv_$(cid + '_' + request.resource.data.lastAdded)).data.status == 'accepted')
+        // Self-leave (owner may also transfer ownership in the same write)
+        || (changed().hasOnly(['participants', 'members', 'unread', 'group.admins', 'group.ownerId', 'updatedAt'])
+          && request.resource.data.participants.size() == resource.data.participants.size() - 1
+          && uid() in resource.data.participants
+          && !(uid() in request.resource.data.participants)
+          && (resource.data.group.ownerId == null
+            || resource.data.group.ownerId in request.resource.data.participants
+            || uid() == resource.data.group.ownerId))
+        // Admin removal — the owner cannot be removed by anyone but themselves
+        || (isAdmin()
+          && changed().hasOnly(['participants', 'members', 'unread', 'group.admins', 'updatedAt'])
+          && request.resource.data.participants.size() == resource.data.participants.size() - 1
+          && (resource.data.group.ownerId in request.resource.data.participants || uid() == resource.data.group.ownerId))
+      );
+
+      // A group can only be deleted while a single participant remains.
+      allow delete: if signedIn() && uid() in resource.data.participants
+        && resource.data.participants.size() == 1;
+
+      // ---------- messages ----------
+      match /messages/{mid} {
+        allow read: if signedIn() && uid() in convDoc(cid).participants;
+        allow create: if signedIn()
+          && uid() in convDoc(cid).participants
+          && request.resource.data.senderId == uid()
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.type in ['text', 'image', 'video', 'file', 'audio', 'voice', 'gif', 'poll', 'quiz', 'system']
+          && request.resource.data.text is string
+          && request.resource.data.text.size() <= 4000;
+        allow update: if signedIn() && uid() in convDoc(cid).participants && (
+          // receipts and reactions by any participant
+          changed().hasOnly(['reactions', 'deliveredTo', 'readBy'])
+          // sender edits their own text
+          || (resource.data.senderId == uid() && changed().hasOnly(['text', 'editedAt']))
+          // sender deletes for everyone
+          || (resource.data.senderId == uid() && changed().hasOnly(['deleted', 'text', 'media', 'gif']))
+        );
+        allow delete: if signedIn() && resource.data.senderId == uid();
+      }
+
+      // ---------- typing indicators ----------
+      match /typing/{tuid} {
+        allow read: if signedIn() && uid() in convDoc(cid).participants;
+        allow write: if signedIn() && tuid == uid() && uid() in convDoc(cid).participants;
+      }
+    }
+
+    // ---------- group invitations & join requests ----------
+    match /groupInvitations/{iid} {
+      allow read: if signedIn() && (resource.data.fromUid == uid() || resource.data.toUid == uid());
+      allow create: if signedIn()
+        && request.resource.data.fromUid == uid()
+        && request.resource.data.toUid != uid()
+        && iid == 'inv_' + request.resource.data.groupId + '_' + request.resource.data.toUid
+        && exists(/databases/$(db)/documents/users/$(request.resource.data.toUid))
+        && (
+          // An admin of the group invites someone
+          (convDoc(request.resource.data.groupId).members[uid()].role in ['owner', 'admin']
+            && uid() in convDoc(request.resource.data.groupId).participants
+            && (request.resource.data.status == 'pending'
+              || (request.resource.data.status == 'accepted'
+                && userDoc(request.resource.data.toUid).settings.requireGroupApproval == false)))
+          ||
+          // A user asks to join a public group (request lands with the owner)
+          (request.resource.data.kind == 'join-request'
+            && request.resource.data.status == 'pending'
+            && convDoc(request.resource.data.groupId).group.ownerId == request.resource.data.toUid
+            && convDoc(request.resource.data.groupId).group.privacy == 'public')
+        );
+      allow update: if signedIn()
+        && resource.data.toUid == uid()
+        && changed().hasOnly(['status', 'updatedAt'])
+        && request.resource.data.status in ['pending', 'accepted', 'declined'];
+      allow delete: if signedIn() && (resource.data.fromUid == uid() || resource.data.toUid == uid());
+    }
+
+    // ---------- notifications ----------
+    match /notifications/{nid} {
+      allow read, update, delete: if signedIn() && resource.data.uid == uid();
+      allow update: if changed().hasOnly(['read']);
+      allow create: if signedIn()
+        && request.resource.data.uid is string
+        && request.resource.data.uid != uid()
+        && request.resource.data.type is string && request.resource.data.type.size() <= 32
+        && request.resource.data.title is string && request.resource.data.title.size() <= 120
+        && request.resource.data.body is string && request.resource.data.body.size() <= 240
+        && request.resource.data.read == false;
+    }
+
+    // ---------- polls ----------
+    match /polls/{pid} {
+      allow read: if signedIn() && uid() in convDoc(resource.data.conversationId).participants;
+      allow create: if signedIn()
+        && request.resource.data.createdBy == uid()
+        && uid() in convDoc(request.resource.data.conversationId).participants
+        && request.resource.data.question is string
+        && request.resource.data.question.size() >= 1 && request.resource.data.question.size() <= 240
+        && request.resource.data.options is list
+        && request.resource.data.options.size() >= 2 && request.resource.data.options.size() <= 8
+        && request.resource.data.votes.keys().size() == 0;
+      allow update: if signedIn()
+        && uid() in convDoc(resource.data.conversationId).participants
+        && (
+          // casting or changing a vote
+          (changed().hasOnly(['votes'])
+            && uid() in request.resource.data.votes
+            && resource.data.closed != true
+            && (request.resource.data.multiple == true || request.resource.data.votes[uid()].size() == 1)
+            && request.resource.data.votes[uid()].size() <= resource.data.options.size())
+          // creator closes the poll
+          || (resource.data.createdBy == uid() && changed().hasOnly(['closed']))
+        );
+      allow delete: if signedIn() && resource.data.createdBy == uid();
+    }
+
+    // ---------- quizzes ----------
+    match /quizzes/{qid} {
+      allow read: if signedIn() && uid() in convDoc(resource.data.conversationId).participants;
+      allow create: if signedIn()
+        && request.resource.data.createdBy == uid()
+        && uid() in convDoc(request.resource.data.conversationId).participants
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 1 && request.resource.data.title.size() <= 120
+        && request.resource.data.questions is list
+        && request.resource.data.questions.size() >= 1 && request.resource.data.questions.size() <= 10;
+      allow update: if signedIn() && resource.data.createdBy == uid();
+      allow delete: if signedIn() && resource.data.createdBy == uid();
+    }
+
+    // ---------- quiz attempts ----------
+    match /quizAttempts/{aid} {
+      allow read: if signedIn()
+        && (resource.data.uid == uid()
+          || get(/databases/$(db)/documents/quizzes/$(resource.data.quizId)).data.createdBy == uid());
+      allow create: if signedIn()
+        && request.resource.data.uid == uid()
+        && uid() in convDoc(request.resource.data.conversationId).participants
+        && exists(/databases/$(db)/documents/quizzes/$(request.resource.data.quizId))
+        && request.resource.data.score is number && request.resource.data.score >= 0
+        && request.resource.data.total is number && request.resource.data.total >= 1
+        && request.resource.data.score <= request.resource.data.total
+        && request.resource.data.answers is list;
+      allow update, delete: if signedIn() && resource.data.uid == uid();
+    }
+
+    // ---------- device tokens (push) ----------
+    match /deviceTokens/{token} {
+      allow read: if signedIn() && resource.data.uid == uid();
+      allow create, update: if signedIn() && request.resource.data.uid == uid();
+      allow delete: if signedIn() && resource.data.uid == uid();
+    }
+
+    // ---------- reports (abuse) ----------
+    match /reports/{rid} {
+      allow read: if signedIn() && resource.data.reporterUid == uid();
+      allow create: if signedIn()
+        && request.resource.data.reporterUid == uid()
+        && request.resource.data.reason is string && request.resource.data.reason.size() <= 64;
+      allow update, delete: if false;
+    }
+  }
+}

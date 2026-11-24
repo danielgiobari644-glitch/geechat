@@ -1,0 +1,24 @@
+{
+  "name": "GeeChat",
+  "short_name": "GeeChat",
+  "description": "The modern way to message, share and grow together. Real-time private and group messaging with polls, quizzes, GIFs, voice notes and more.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F5F8F6",
+  "theme_color": "#168B50",
+  "lang": "en",
+  "categories": ["social", "communication"],
+  "icons": [
+    { "src": "icon-96.png", "sizes": "96x96", "type": "image/png", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Open chats", "url": "/?view=chats", "icons": [{ "src": "icon-96.png", "sizes": "96x96" }] },
+    { "name": "Discover people", "url": "/?view=discover", "icons": [{ "src": "icon-96.png", "sizes": "96x96" }] }
+  ]
+}
