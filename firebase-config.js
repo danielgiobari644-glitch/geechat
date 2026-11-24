@@ -17,7 +17,7 @@ self.GEECHAT_CONFIG = {
   //   → General → Your apps → Web app (</>) → SDK setup and configuration
   //   → Config → copy the whole firebaseConfig object over this block.
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
+firebaseConfig = {
   apiKey: "AIzaSyCNc3CS7c37-o-9XoV0CcM72rGYdcpbTFk",
   authDomain: "geechat-com.firebaseapp.com",
   projectId: "geechat-com",
