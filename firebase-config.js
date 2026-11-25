@@ -16,7 +16,7 @@ self.GEECHAT_CONFIG = {
   // console.firebase.google.com → your project → Project settings
   //   → General → Your apps → Web app (</>) → SDK setup and configuration
   //   → Config → copy the whole firebaseConfig object over this block.
-  firebaseConfig = {
+  firebaseConfig: {
     apiKey: "AIzaSyBx47JIOOUPG4lovrBY1s7yP7A8tnDc9QY",
     authDomain: "geechat12.firebaseapp.com",
     projectId: "geechat12",
