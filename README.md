@@ -70,38 +70,45 @@ Without the VAPID key the app still shows foreground notifications and in-app al
 
 ## 3. Configuration reference — connect your own Firebase project
 
-Every external service credential lives in **`firebase-config.js`** (loaded by the page, both service workers and `firebase.js`):
+Every external service credential lives in **`firebase-config.js`**. The app loads it dynamically and both service workers read it via `importScripts()` — a mistake in this file (e.g. a snippet pasted in the wrong spot) shows a clear setup screen instead of breaking the app:
 
 ```js
-self.GEECHAT_CONFIG = {
-  firebaseConfig: { apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId, measurementId },
-  media:  { cloudName, uploadPreset },   // media uploads
-  gif:    { apiKey },                    // GIF discovery
-  vapidPublicKey: "",                    // background web push
-};
+// ---- FIREBASE CONFIG START — replace everything between these markers ----
+const firebaseConfig = { apiKey, authDomain, projectId, storageBucket,
+                         messagingSenderId, appId, measurementId };
+// ---- FIREBASE CONFIG END ----
+
+const GEECHAT_MEDIA = { cloudName, uploadPreset };   // media uploads (optional)
+const GEECHAT_GIF   = { apiKey };                    // GIF discovery (optional)
+const GEECHAT_VAPID = "";                            // background push (optional)
+
+// Assembly (do not edit below this line)
+self.GEECHAT_CONFIG = { firebaseConfig, media: GEECHAT_MEDIA, gif: GEECHAT_GIF, vapidPublicKey: GEECHAT_VAPID };
 ```
 
 ### Connecting your own project (step by step)
 1. Create a free project at **console.firebase.google.com** (the Spark plan is enough).
 2. **Build → Authentication → Get started** → enable **Email/Password** and **Google**.
 3. **Build → Firestore Database** → create a database in **production mode**, then deploy the bundled rules and indexes (§2 Step 3).
-4. **Project settings → General → Your apps → Web (</>)** → register an app → copy the `firebaseConfig` values.
-5. Open **`firebase-config.js`** and replace the `firebaseConfig` block with your values (and `vapidPublicKey` if you enable push).
-6. **Authentication → Settings → Authorized domains** → add the domain you host the app on (localhost works by default).
-7. Reload the app. If the configuration is still invalid you get a setup screen with a **Retry connection** button — the app checks the key against Google's identity endpoint on every boot.
+4. **Project settings → General → Your apps → Web (</>)** → register an app → copy the whole `firebaseConfig = { … };` snippet.
+5. Open **`firebase-config.js`** and replace **everything between the two `FIREBASE CONFIG START/END` marker lines** with that snippet. Pasting it exactly as the console gives it — starting with `const firebaseConfig = {` — is fine. Do **not** paste it anywhere else in the file (that is what causes `SyntaxError: Invalid shorthand property initializer`). Also paste your VAPID key into `GEECHAT_VAPID` if you enable background push.
+6. **Authentication → Settings → Authorized domains** → add the domain you host the app on (localhost works by default). Without it, Google sign-in (redirect flow) fails with `auth/unauthorized-domain`.
+7. Reload the app. The setup screen appears **only** when Google explicitly rejects the key (`API_KEY_INVALID`); other responses pass through and sign-in errors surface with precise messages instead.
 
 ### Troubleshooting
 
 | Symptom | Cause → fix |
 | --- | --- |
-| `API key not valid` / `API_KEY_INVALID` 400 from `identitytoolkit.googleapis.com` | The API key itself is rejected (revoked or from a deleted project) — not a permissions issue. Replace the whole `firebaseConfig` block in `firebase-config.js` with your own project's values; there is no way to repair someone else's key. |
+| `SyntaxError: Invalid shorthand property initializer` in `firebase-config.js` | A snippet was pasted inside the assembly object (or `key = value` instead of `key: value` slipped in). The app survives it — a setup screen explains this instead of crashing. Open the file, keep your snippet strictly between the two `FIREBASE CONFIG START/END` markers, and let the console point you to the exact line. |
+| `API key not valid` / `API_KEY_INVALID` 400 from `identitytoolkit.googleapis.com` | The API key itself is rejected (revoked or from a deleted project) — not a permissions issue. Replace the block between the markers in `firebase-config.js` with your own project's values; there is no way to repair someone else's key. |
 | Setup screen appears on every boot | Same as above, or missing fields (`apiKey`, `authDomain`, `projectId`, `appId`). Follow the steps above, then press **Retry connection**. |
+| Google sign-in floods the console with `Cross-Origin-Opener-Policy policy would block the window.closed call` and never completes | The host sends COOP headers that break sign-in **popups**. This build already uses the **redirect flow** (`signInWithRedirect`), which is immune — so if you still see it, you are running a cached old build: bump `VERSION` in `sw.js` (now `geechat-v3`) and hard-refresh. Redirect errors surface at boot via `getRedirectResult` with a friendly message. |
 | `auth/unauthorized-domain` | Your domain isn't whitelisted → **Authentication → Settings → Authorized domains** → add it. |
 | `auth/configuration-not-found` | Email/Password sign-in isn't enabled → **Authentication → Sign-in method**. |
-| The page itself 404s (e.g. hosting the app under `/geechat/`) | Your host doesn't serve `index.html` for that path. Upload the files so that `…/geechat/` resolves to `index.html` (most static hosts do this automatically for a folder upload). All asset references, the manifest and the service workers are relative since v2, so any subpath works once the entry file is served. |
+| The page itself 404s (e.g. hosting the app under `/geechat/`) | Your host doesn't serve `index.html` for that path. Try the direct URL `…/geechat/index.html` — if that works, enable directory indexing (or re-upload so `index.html` sits at the served path). All asset references, the manifest and the service workers are relative, so any subpath works once the entry file is served. |
 | Stale app after editing `firebase-config.js` | The shell service worker caches assets — bump `VERSION` in `sw.js` (or unregister it in DevTools → Application → Service Workers) and hard-refresh. |
 
-> ⚠️ **Owner action required:** the shipped Firebase config is a placeholder — Google rejects its key with `API_KEY_INVALID`, so the app shows the setup screen until you connect your own project (steps above). Everything else in this build was verified against the live services.
+> **Note:** this build ships **already connected** to a real Firebase project (`geechat12`) — the same steps above let anyone repoint it to their own project by replacing the block between the markers.
 
 ## 4. Cloud Functions (`functions.js`)
 

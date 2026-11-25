@@ -254,8 +254,8 @@
 
   <input type="file" id="hiddenFileInput" class="visually-hidden" tabindex="-1" aria-hidden="true">
 
-  <!-- Platform configuration: the ONLY file you edit to connect services. -->
-  <script src="firebase-config.js"></script>
+  <!-- firebase-config.js (the only file you edit) is loaded by firebase.js at
+       boot — dynamically, so a bad paste there can never crash the app. -->
   <script type="module" src="app.js"></script>
 </body>
 </html>

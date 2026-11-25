@@ -1,23 +1,31 @@
 // GeeChat — authentication: register, login, Google sign-in, reset, logout.
 import {
-  createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup,
-  sendPasswordResetEmail, signOut, onAuthStateChanged, updateProfile, GoogleAuthProvider, deleteUser,
+  createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithRedirect,
+  getRedirectResult, sendPasswordResetEmail, signOut, onAuthStateChanged, updateProfile, GoogleAuthProvider, deleteUser,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { fs as fb, friendlyAuthError } from './firebase.js';
 import {
   store, userRef, reserveUsername, isUsernameAvailable, USERNAME_RE, serverTimestamp,
   loadFriendState, loadBlocks, loadGroupInvites, DEFAULT_SETTINGS, startPresence,
 } from './database.js';
-import { el, qs, qsa, icon, hydrateIcons, toast, openModal } from './ui.js';
+import { el, qs, qsa, icon, hydrateIcons, openModal } from './ui.js';
 import { pickFile, uploadMedia, sizedUrl } from './media.js';
 
 let authReadyCb = null;
 
 export function initAuth({ onReady }) {
   authReadyCb = onReady;
+  // Google sign-in uses the redirect flow: many static hosts send
+  // Cross-Origin-Opener-Policy headers that silently break the popup
+  // handshake (popup.ts "would block the window.closed call" spam).
+  // Capture the redirect result — and any redirect error — once at boot.
+  getRedirectResult(fb.auth).catch(err => {
+    setAuthError(friendlyAuthError(err));
+  });
   onAuthStateChanged(fb.auth, async user => {
     if (user) {
-      const snap = await userRef(user.uid).get();
+      const snap = await getDoc(userRef(user.uid));
       if (!snap.exists()) {
         // Authenticated but no profile (e.g. interrupted registration or first Google sign-in).
         await completeProfileSetup(user);
@@ -174,14 +182,13 @@ async function doGoogle() {
   try {
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
-    await signInWithPopup(fb.auth, provider);
+    // Redirect instead of popup — COOP headers on many static hosts break
+    // the popup's window.closed polling, so the sign-in never completes.
+    await signInWithRedirect(fb.auth, provider);
   } catch (err) {
-    if (err.code === 'auth/popup-blocked') {
-      toast('Popup blocked', 'Allow popups for this site, then try again.', { error: true });
-    } else if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
-      setAuthError(friendlyAuthError(err));
-    }
-  } finally { btn.disabled = false; }
+    setAuthError(friendlyAuthError(err));
+    btn.disabled = false;
+  }
 }
 
 async function doReset(e) {

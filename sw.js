@@ -1,7 +1,7 @@
 /* GeeChat — app shell service worker.
    Caches only static application assets. Never caches conversations,
    messages or any authenticated API responses. */
-const VERSION = 'geechat-v2';
+const VERSION = 'geechat-v3';
 const SHELL = [
   './',
   './index.html',

@@ -2,15 +2,24 @@
 // Central configuration for authentication, realtime data, media delivery
 // and GIF discovery. The interface never mentions infrastructure vendors.
 // The actual keys live in firebase-config.js — the ONLY file you edit.
-import './firebase-config.js';
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, browserSessionPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 // ---- Platform configuration (from firebase-config.js) ------------------------
-const CFG = (self.GEECHAT_CONFIG && typeof self.GEECHAT_CONFIG === 'object')
-  ? self.GEECHAT_CONFIG : {};
+// Loaded DYNAMICALLY and wrapped in try/catch: a mistake in the config file
+// (e.g. a pasted snippet in the wrong spot) must never take the whole app
+// down — the boot gate shows a setup screen explaining it instead.
+let CFG = {};
+let CONFIG_BROKEN = false;
+try {
+  await import('./firebase-config.js');
+  CFG = (self.GEECHAT_CONFIG && typeof self.GEECHAT_CONFIG === 'object')
+    ? self.GEECHAT_CONFIG : {};
+} catch {
+  CONFIG_BROKEN = true; // syntax error or load failure in firebase-config.js
+}
 
 export const firebaseConfig = CFG.firebaseConfig || {};
 export const MEDIA_CLOUD_NAME = CFG.media?.cloudName || '';
@@ -28,6 +37,7 @@ let platformCheck = null;
 export function checkPlatform(force = false) {
   if (platformCheck && !force) return platformCheck;
   platformCheck = (async () => {
+    if (CONFIG_BROKEN) return { ok: false, code: 'broken' };
     const required = ['apiKey', 'authDomain', 'projectId', 'appId'];
     const missing = required.filter(k => !firebaseConfig[k]);
     if (missing.length) return { ok: false, code: 'config', missing };

@@ -77,6 +77,7 @@ function hideSplash() {
 function showSetupScreen(status) {
   const REASONS = {
     apiKey: 'Google rejected the bundled Firebase API key ("API key not valid"). The app needs the credentials of its own Firebase project before anyone can sign in.',
+    broken: 'firebase-config.js could not be loaded — it has a syntax error (the browser console shows the exact line, usually a snippet pasted in the wrong spot). Open the file and make sure your Firebase snippet sits BETWEEN the two "FIREBASE CONFIG START/END" marker lines, and nowhere else.',
     project: 'Google did not accept the Firebase project referenced in the configuration — the project may have been deleted or the values pasted incorrectly.',
     config: 'The configuration in firebase-config.js is missing required Firebase fields.',
   };
