@@ -143,7 +143,7 @@ async function doRegister(e) {
     } else if (err.code === 'auth/email-already-in-use') {
       setAuthError('An account with this email already exists. Sign in instead.');
     } else {
-      setAuthError(friendlyAuthError(err.code));
+      setAuthError(friendlyAuthError(err));
     }
   } finally { busy(btn, false); }
 }
@@ -163,7 +163,7 @@ async function doLogin(e) {
     await signInWithEmailAndPassword(fb.auth, email, password);
     hideBanners();
   } catch (err) {
-    setAuthError(friendlyAuthError(err.code));
+    setAuthError(friendlyAuthError(err));
   } finally { busy(btn, false); }
 }
 
@@ -179,7 +179,7 @@ async function doGoogle() {
     if (err.code === 'auth/popup-blocked') {
       toast('Popup blocked', 'Allow popups for this site, then try again.', { error: true });
     } else if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
-      setAuthError(friendlyAuthError(err.code));
+      setAuthError(friendlyAuthError(err));
     }
   } finally { btn.disabled = false; }
 }
@@ -196,7 +196,7 @@ async function doReset(e) {
     setMode('login');
     setAuthSuccess(`If an account exists for ${email}, a reset link is on its way. Check your inbox.`);
   } catch (err) {
-    setAuthError(friendlyAuthError(err.code));
+    setAuthError(friendlyAuthError(err));
   } finally { busy(btn, false); }
 }
 

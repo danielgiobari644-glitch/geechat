@@ -16,16 +16,16 @@ self.GEECHAT_CONFIG = {
   // console.firebase.google.com → your project → Project settings
   //   → General → Your apps → Web app (</>) → SDK setup and configuration
   //   → Config → copy the whole firebaseConfig object over this block.
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-firebaseConfig = {
-  apiKey: "AIzaSyCNc3CS7c37-o-9XoV0CcM72rGYdcpbTFk",
-  authDomain: "geechat-com.firebaseapp.com",
-  projectId: "geechat-com",
-  storageBucket: "geechat-com.firebasestorage.app",
-  messagingSenderId: "792018335741",
-  appId: "1:792018335741:web:3b43c1f823aba32a50cb94",
-  measurementId: "G-493C40NG2Q"
-};
+  firebaseConfig: {
+    apiKey: "AIzaSyCN3C3s7c37-o-9XoV0CcM72RgydcpbTFk",
+    authDomain: "geechat-com.firebaseapp.com",
+    projectId: "geechat-com",
+    storageBucket: "geechat-com.firebasestorage.app",
+    messagingSenderId: "792018335741",
+    appId: "1:792018335741:web:3b43c1f823aba32a50cb94",
+    measurementId: "G-493C40NG2Q"
+  },
+
   // ---- Media delivery (Cloudinary, optional — image/video/file uploads) -------
   // dashboard.cloudinary.com → Settings → Upload → add an unsigned upload preset
   // (Unsigned works because security rules live in the Firestore rules file, not here).

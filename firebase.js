@@ -41,7 +41,12 @@ export function checkPlatform(force = false) {
     if (res.ok) return { ok: true, code: '' };
     const body = await res.json().catch(() => ({}));
     const blob = [body.error?.message, JSON.stringify(body.error?.details || [])].join(' ');
-    return { ok: false, code: /API_KEY_INVALID|API key not valid/i.test(blob) ? 'apiKey' : 'project' };
+    // Block ONLY when Google definitively rejects the key itself. Any other
+    // failure (SERVICE_DISABLED on a brand-new project, quota, regional
+    // restrictions, an unexpected response) must pass through — the actual
+    // sign-in call surfaces a precise, friendly error if something is off.
+    if (/API_KEY_INVALID|API key not valid|INVALID_API_KEY/i.test(blob)) return { ok: false, code: 'apiKey' };
+    return { ok: true, code: '' };
   })();
   return platformCheck;
 }
@@ -91,7 +96,10 @@ export const DEFAULT_SETTINGS = {
   pushEnabled: true,
 };
 
-export function friendlyAuthError(code) {
+export function friendlyAuthError(err) {
+  // Accepts either an error code string or the full Firebase error object.
+  const code = typeof err === 'string' ? err : (err?.code || '');
+  const detail = typeof err === 'string' ? '' : String(err?.message || '');
   const map = {
     'auth/invalid-email': 'That email address doesn\'t look right.',
     'auth/user-not-found': 'No account found with that email.',
@@ -112,5 +120,10 @@ export function friendlyAuthError(code) {
     'auth/project-not-found': 'The Firebase project was not found. Check the projectId in firebase-config.js.',
     'auth/configuration-not-found': 'Email sign-in is not enabled for this project. Enable it in Authentication → Sign-in method.',
   };
-  return map[code] || 'Something went wrong. Please try again.';
+  if (map[code]) return map[code];
+  // Raw Google-API failures that the SDK wraps in generic codes:
+  if (/API_KEY_INVALID|API key not valid|INVALID_API_KEY/i.test(code + ' ' + detail)) return map['auth/invalid-api-key'];
+  if (/SERVICE_DISABLED|Identity Toolkit/i.test(detail)) return 'Google\'s sign-in service isn\'t active for this project yet. Open the Firebase console → Authentication → Sign-in method, enable Email/Password, and try again.';
+  if (/PERMISSION_DENIED|referer|HTTP referer|blocked/i.test(detail)) return 'The API key is restricted. In the Google Cloud console → APIs & Services → Credentials, allow this website\'s domain for the key (or remove its restrictions).';
+  return 'Something went wrong. Please try again.';
 }

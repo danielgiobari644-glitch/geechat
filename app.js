@@ -54,7 +54,7 @@ qsa('.theme-pill').forEach(btn => {
 // failing with cryptic 400 errors from identitytoolkit.
 (async () => {
   const status = await checkPlatform();
-  qs('#splash')?.remove();
+  hideSplash();
   if (!status.ok) { showSetupScreen(status); return; }
   initAuthUI();
   initAuth({
@@ -64,6 +64,14 @@ qsa('.theme-pill').forEach(btn => {
     },
   });
 })();
+
+// Fade the splash out smoothly instead of yanking it off the screen.
+function hideSplash() {
+  const s = qs('#splash');
+  if (!s) return;
+  s.classList.add('out');
+  setTimeout(() => s.remove(), 320);
+}
 
 // ---------- setup screen (bad / missing platform configuration) ----------
 function showSetupScreen(status) {
