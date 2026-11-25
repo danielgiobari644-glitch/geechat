@@ -16,14 +16,14 @@ self.GEECHAT_CONFIG = {
   // console.firebase.google.com → your project → Project settings
   //   → General → Your apps → Web app (</>) → SDK setup and configuration
   //   → Config → copy the whole firebaseConfig object over this block.
-  firebaseConfig: {
-    apiKey: "AIzaSyCN3C3s7c37-o-9XoV0CcM72RgydcpbTFk",
-    authDomain: "geechat-com.firebaseapp.com",
-    projectId: "geechat-com",
-    storageBucket: "geechat-com.firebasestorage.app",
-    messagingSenderId: "792018335741",
-    appId: "1:792018335741:web:3b43c1f823aba32a50cb94",
-    measurementId: "G-493C40NG2Q"
+  firebaseConfig = {
+    apiKey: "AIzaSyBx47JIOOUPG4lovrBY1s7yP7A8tnDc9QY",
+    authDomain: "geechat12.firebaseapp.com",
+    projectId: "geechat12",
+    storageBucket: "geechat12.firebasestorage.app",
+    messagingSenderId: "439323791584",
+    appId: "1:439323791584:web:00568cc529ed916a964085",
+    measurementId: "G-9S25SHGWJT"
   },
 
   // ---- Media delivery (Cloudinary, optional — image/video/file uploads) -------
