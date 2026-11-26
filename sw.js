@@ -1,9 +1,8 @@
 /* GeeChat — app shell service worker.
    Caches only static application assets. Never caches conversations,
    messages or any authenticated API responses. */
-const VERSION = 'geechat-v4';
+const VERSION = 'geechat-v5';
 const SHELL = [
-  './',
   './index.html',
   './styles.css',
   './manifest.json',
@@ -23,6 +22,8 @@ const SHELL = [
   './profile.js',
   './settings.js',
   './ui.js',
+  './inter-var.woff2',
+  './manrope-var.woff2',
   './icon-96.png',
   './icon-192.png',
   './icon-512.png',
@@ -50,8 +51,10 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   // Only handle same-origin GET navigation/static requests.
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
-  // Never cache anything that looks like a data or auth request.
-  if (url.pathname.includes('/firebase') || url.pathname.startsWith('/__')) return;
+  // Never cache Firebase Hosting internal paths ("/__/…") or anything else
+  // that looks like a data/auth endpoint. The app's own firebase*.js files
+  // stay in the shell cache — they are static, same-origin assets.
+  if (url.pathname.startsWith('/__/') || url.pathname.startsWith('/__')) return;
 
   if (event.request.mode === 'navigate') {
     event.respondWith(

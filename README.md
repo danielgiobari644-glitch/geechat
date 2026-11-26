@@ -33,6 +33,8 @@ GeeChat is a complete, production-ready real-time messaging platform with a prem
 | `firestore.rules` | Production Firestore security rules |
 | `firestore.indexes.json` | Required composite indexes |
 | `icon-*.png`, `favicon.svg`, `favicon-32.png`, `apple-touch-icon.png` | Application icons |
+| `inter-var.woff2`, `manrope-var.woff2` | Self-hosted variable fonts (Inter, Manrope) — no Google Fonts request, no font-swap reflow, offline-friendly |
+| `404.html` | Fallback for hosts that 404 a directory URL — redirects to `index.html` |
 | `README.md` | This guide |
 
 ## 2. Deploy in five steps
@@ -105,7 +107,7 @@ self.GEECHAT_CONFIG = { firebaseConfig, media: GEECHAT_MEDIA, gif: GEECHAT_GIF, 
 | Google sign-in floods the console with `Cross-Origin-Opener-Policy policy would block the window.closed call` and never completes | The host sends COOP headers that break sign-in **popups**. This build already uses the **redirect flow** (`signInWithRedirect`), which is immune — so if you still see it, you are running a cached old build: bump `VERSION` in `sw.js` (now `geechat-v3`) and hard-refresh. Redirect errors surface at boot via `getRedirectResult` with a friendly message. |
 | `auth/unauthorized-domain` | Your domain isn't whitelisted → **Authentication → Settings → Authorized domains** → add it. |
 | `auth/configuration-not-found` | Email/Password sign-in isn't enabled → **Authentication → Sign-in method**. |
-| The page itself 404s (e.g. hosting the app under `/geechat/`) | Your host doesn't serve `index.html` for that path. Try the direct URL `…/geechat/index.html` — if that works, enable directory indexing (or re-upload so `index.html` sits at the served path). All asset references, the manifest and the service workers are relative, so any subpath works once the entry file is served. |
+| `geechat/:1 404` in the console (app still loads) | **Found and fixed in v5:** the service worker pre-cache list contained `'./'` — the directory URL itself — which hosts without directory indexing 404, and one failed URL aborted the whole SW install. Re-upload this build and the 404 is gone (and offline caching finally works). If the page *itself* still 404s, try the direct URL `…/geechat/index.html`; the bundled `404.html` also bounces directory URLs to `index.html` on hosts that use it. |
 | Stale app after editing `firebase-config.js` | The shell service worker caches assets — bump `VERSION` in `sw.js` (or unregister it in DevTools → Application → Service Workers) and hard-refresh. |
 
 > **Note:** this build ships **already connected** to a real Firebase project (`geechat12`) — the same steps above let anyone repoint it to their own project by replacing the block between the markers.

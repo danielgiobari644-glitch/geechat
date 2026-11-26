@@ -3,6 +3,24 @@
    Light (daytime) + dark (nighttime) themes via CSS custom properties
    ========================================================================== */
 
+/* Self-hosted variable fonts (weights below are the ones the UI uses).
+   Local files load with the stylesheet itself — no late font swap, so no
+   text reflow "glitch" on the landing page, and the shell works offline. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('inter-var.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('manrope-var.woff2') format('woff2');
+}
+
 :root {
   --bg: #F5F8F6;
   --surface: #FFFFFF;
@@ -192,12 +210,14 @@ a { color: var(--green); text-decoration: none; }
 .ps-row u { display: inline-flex; margin-top: 3px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px; background: #29C779; color: #05230F; font-size: 9px; font-weight: 700; text-decoration: none; justify-content: center; align-items: center; }
 .glass-bubble { position: absolute; right: 8%; top: 12%; width: 120px; height: 96px; border-radius: 34px 34px 34px 8px;
   background: linear-gradient(140deg, rgba(52, 199, 123, .92), rgba(18, 128, 74, .82)); box-shadow: 0 18px 44px rgba(22, 139, 80, .35), inset 0 2px 10px rgba(255,255,255,.45);
-  display: flex; align-items: center; justify-content: center; gap: 9px; will-change: transform; animation: floaty 5s ease-in-out infinite; }
+  display: flex; align-items: center; justify-content: center; gap: 9px; }
+  /* Deliberately static: a floating surface with a large shadow hovering over
+     the backdrop-filtered badges bar forced full repaints every frame — the
+     "glitching" textbox on the landing page. Only the typing dots animate. */
 .glass-bubble::after { content: ""; position: absolute; bottom: -12px; left: 16px; width: 26px; height: 22px; background: inherit; border-radius: 6px 6px 22px 4px; transform: rotate(-14deg); }
 .glass-bubble i { width: 13px; height: 13px; border-radius: 50%; background: rgba(255, 255, 255, .92); box-shadow: inset 0 1px 3px rgba(255,255,255,.6); }
 .glass-bubble i:nth-child(2) { animation: blink 1.6s ease infinite .2s; }
 .glass-bubble i:nth-child(3) { animation: blink 1.6s ease infinite .45s; }
-@keyframes floaty { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-12px) rotate(-3deg); } }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 
 .auth-badges { list-style: none; margin-top: clamp(14px, 2.6vh, 26px); display: flex; align-items: stretch; justify-content: space-between;
