@@ -3,7 +3,7 @@ import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithRedirect,
   getRedirectResult, sendPasswordResetEmail, signOut, onAuthStateChanged, updateProfile, GoogleAuthProvider, deleteUser,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getDoc, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { fs as fb, friendlyAuthError } from './firebase.js';
 import {
   store, userRef, reserveUsername, isUsernameAvailable, USERNAME_RE, serverTimestamp,
@@ -127,7 +127,7 @@ async function doRegister(e) {
     const cred = await createUserWithEmailAndPassword(fb.auth, email, password);
     await updateProfile(cred.user, { displayName: name, ...(photoURL ? { photoURL } : {}) });
     // Atomically reserve the username and create the profile document.
-    await fb.db.runTransaction(async tx => {
+    await runTransaction(fb.db, async tx => {
       await reserveUsername(tx, lower, cred.user.uid);
       tx.set(userRef(cred.user.uid), {
         uid: cred.user.uid,
@@ -235,7 +235,7 @@ function completeProfileSetup(user) {
     const username = unameInput.value.trim();
     try {
       if (!USERNAME_RE.test(username)) throw new Error('Please choose a valid username.');
-      await fb.db.runTransaction(async tx => {
+      await runTransaction(fb.db, async tx => {
         await reserveUsername(tx, username.toLowerCase(), user.uid);
         tx.set(userRef(user.uid), {
           uid: user.uid, username, usernameLower: username.toLowerCase(),

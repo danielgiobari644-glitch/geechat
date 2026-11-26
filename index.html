@@ -17,6 +17,16 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    // Apply the theme BEFORE first paint: without this the splash renders in
+    // the default light palette and flips dark once app.js runs — a visible
+    // flash on every boot ("glitching" loading screen). Mirrors ui.js logic.
+    try {
+      var p = localStorage.getItem('geechat.themePref') || 'auto';
+      if (p !== 'light' && p !== 'dark') { var h = new Date().getHours(); p = (h >= 6 && h < 18) ? 'light' : 'dark'; }
+      document.documentElement.dataset.theme = p;
+    } catch (e) { document.documentElement.dataset.theme = 'light'; }
+  </script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
