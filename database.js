@@ -190,10 +190,27 @@ export async function reportContent({ targetType, targetId, reason, details = ''
 }
 
 // ---------- friendships ----------
+// The ordered friend-request queries require composite indexes
+// (firestore.indexes.json). Until they are deployed, Firebase rejects them
+// with failed-precondition — degrade to an empty list instead of letting
+// that failure brick the whole login chain.
+async function safeGetDocs(q, label) {
+  try {
+    return await getDocs(q);
+  } catch (err) {
+    if (/failed-precondition|requires an index/i.test(`${err?.code || ''} ${err?.message || ''}`)) {
+      console.warn(`[GeeChat] Missing Firestore index for "${label}". ` +
+        'Deploy firestore.indexes.json (README §2 Step 3: "firebase deploy --only firestore:indexes") ' +
+        'or click the index-creation link in the Firestore error in the console. Showing an empty list meanwhile.');
+      return { docs: [] };
+    }
+    throw err;
+  }
+}
 export async function loadFriendState() {
   const [fr, frOut, fsAll, blocks] = await Promise.all([
-    getDocs(query(collection(db(), 'friendRequests'), where('toUid', '==', store.uid), where('status', '==', 'pending'), orderBy('createdAt', 'desc'))),
-    getDocs(query(collection(db(), 'friendRequests'), where('fromUid', '==', store.uid), where('status', '==', 'pending'), orderBy('createdAt', 'desc'))),
+    safeGetDocs(query(collection(db(), 'friendRequests'), where('toUid', '==', store.uid), where('status', '==', 'pending'), orderBy('createdAt', 'desc')), 'incoming friend requests'),
+    safeGetDocs(query(collection(db(), 'friendRequests'), where('fromUid', '==', store.uid), where('status', '==', 'pending'), orderBy('createdAt', 'desc')), 'outgoing friend requests'),
     getDocs(query(collection(db(), 'friendships'), where('users', 'array-contains', store.uid))),
     getDocs(query(collection(db(), 'blocks'), where('blocker', '==', store.uid))),
   ]);
@@ -343,7 +360,8 @@ export function subscribeConversations(cb) {
     const ids = new Set(snap.docs.map(d => d.id));
     for (const key of [...store.conversations.keys()]) if (!ids.has(key)) store.conversations.delete(key);
     cb([...store.conversations.values()].sort((a, b) => tsVal(b.updatedAt) - tsVal(a.updatedAt)));
-  }, err => console.warn('conversations listener:', err.code));
+  }, err => console.warn('conversations listener:', err.code,
+    /failed-precondition/i.test(err.code || '') ? '— missing composite index: deploy firestore.indexes.json (README §2 Step 3)' : ''));
 }
 
 export function tsVal(ts) { return ts?.toMillis ? ts.toMillis() : (ts?.seconds ? ts.seconds * 1000 : 0); }

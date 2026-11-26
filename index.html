@@ -53,8 +53,8 @@
     <div class="splash-bar"><i></i></div>
   </div>
 
-  <!-- ============ AUTH / WELCOME ============ -->
-  <div id="authView" class="auth-view hidden">
+  <!-- ============ LANDING (marketing) ============ -->
+  <div id="landingView" class="auth-view hidden">
     <div class="auth-decor" aria-hidden="true">
       <i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i><i class="blob b4"></i>
       <i class="ribbon r1"></i><i class="ribbon r2"></i><i class="ribbon r3"></i>
@@ -66,18 +66,24 @@
         <span class="brand-mark" data-icon="logomark"></span>
         <span class="brand-word">Gee<span>Chat</span></span>
       </div>
-      <button id="authThemeBtn" class="theme-pill" type="button" aria-label="Toggle theme">
+      <button id="landingThemeBtn" class="theme-pill" type="button" aria-label="Toggle theme">
         <span class="tp-sun" data-icon="sun"></span>
         <span class="tp-knob"></span>
         <span class="tp-moon" data-icon="moon"></span>
       </button>
     </header>
 
-    <main class="auth-main">
-      <!-- Left: marketing column -->
+    <main class="auth-main landing-main">
+      <!-- Marketing column -->
       <section class="auth-hero">
         <h1 class="hero-title">Connect.<br>Chat. <span class="accent">Belong.</span></h1>
         <p class="hero-sub">The modern way to message, share and grow together.</p>
+
+        <!-- Call to action: opens the dedicated login / sign-up screen -->
+        <div class="landing-cta">
+          <button type="button" id="ctaSignin" class="btn-hero primary"><span data-icon="arrow-right"></span><span>Sign In</span></button>
+          <button type="button" id="ctaRegister" class="btn-hero ghost"><span data-icon="user-plus"></span><span>Create Account</span></button>
+        </div>
 
         <ul class="hero-feats">
           <li class="hfeat">
@@ -118,8 +124,34 @@
           <li><span data-icon="smile"></span><div>Express<small>Yourself</small></div></li>
         </ul>
       </section>
+    </main>
+  </div>
 
-      <!-- Right: glass auth card -->
+  <!-- ============ LOGIN / SIGN-UP (form screen) ============ -->
+  <div id="authView" class="auth-view hidden">
+    <div class="auth-decor" aria-hidden="true">
+      <i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i><i class="blob b4"></i>
+      <i class="ribbon r1"></i><i class="ribbon r2"></i><i class="ribbon r3"></i>
+      <i class="leaf l1"></i><i class="leaf l2"></i>
+    </div>
+
+    <header class="auth-top">
+      <button id="authBack" class="back-pill" type="button" aria-label="Back to landing page">
+        <span data-icon="arrow-left"></span><span>Home</span>
+      </button>
+      <div class="brand small">
+        <span class="brand-mark" data-icon="logomark"></span>
+        <span class="brand-word">Gee<span>Chat</span></span>
+      </div>
+      <button id="authThemeBtn" class="theme-pill" type="button" aria-label="Toggle theme">
+        <span class="tp-sun" data-icon="sun"></span>
+        <span class="tp-knob"></span>
+        <span class="tp-moon" data-icon="moon"></span>
+      </button>
+    </header>
+
+    <main class="auth-main auth-main-single">
+      <!-- Glass auth card -->
       <section class="auth-panel">
         <div class="glass-card auth-card">
           <div class="auth-card-brand">
@@ -265,6 +297,42 @@
 
   <input type="file" id="hiddenFileInput" class="visually-hidden" tabindex="-1" aria-hidden="true">
 
+  <!-- Boot safety net: a classic script, so it runs even when every module
+       fails to load. Without it a dead app leaves the auth forms unwired and
+       pressing Enter / clicking Sign In performs a NATIVE form navigation to
+       the directory URL — the "geechat/:1 404" console error. This stops that
+       navigation and explains what to do instead of dying silently. -->
+  <script>
+    (function () {
+      function showBootFail(detail) {
+        var el = document.getElementById('bootFailBanner');
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'bootFailBanner';
+          el.style.cssText = 'position:fixed;left:16px;right:16px;bottom:16px;z-index:9999;max-width:520px;margin:0 auto;' +
+            'background:#16241C;color:#EAF4EE;border:1px solid #2E5B42;border-radius:14px;padding:14px 18px;' +
+            'font:14px/1.5 system-ui,sans-serif;box-shadow:0 12px 40px rgba(0,0,0,.35)';
+          el.innerHTML = '<b>GeeChat didn\u2019t finish starting.</b><br>' +
+            'One of the app files failed to load. Hard-refresh (Ctrl+Shift+R / Cmd+Shift+R).<br>' +
+            '<small style="opacity:.7"></small>';
+          el.lastElementChild.textContent = detail || '';
+          document.body.appendChild(el);
+        }
+      }
+      document.addEventListener('submit', function (e) {
+        if (!window.__geechatBooted) {
+          e.preventDefault();
+          showBootFail('The app was still loading when the form was used.');
+        }
+      }, true);
+      window.addEventListener('error', function (e) {
+        if (!window.__geechatBooted && e && e.filename) showBootFail(String(e.message || '').slice(0, 140));
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        if (!window.__geechatBooted) showBootFail(String((e.reason && e.reason.message) || e.reason || '').slice(0, 140));
+      });
+    })();
+  </script>
   <!-- firebase-config.js (the only file you edit) is loaded by firebase.js at
        boot — dynamically, so a bad paste there can never crash the app. -->
   <script type="module" src="app.js"></script>

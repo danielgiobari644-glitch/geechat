@@ -25,18 +25,19 @@ export function initAuth({ onReady }) {
   });
   onAuthStateChanged(fb.auth, async user => {
     if (user) {
-      const snap = await getDoc(userRef(user.uid));
-      if (!snap.exists()) {
-        // Authenticated but no profile (e.g. interrupted registration or first Google sign-in).
-        await completeProfileSetup(user);
-      } else {
-        const data = { id: snap.id, ...snap.data() };
-        store.me = data;
-        store.uid = user.uid;
-        store.settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
-        await Promise.all([loadFriendState(), loadBlocks(), loadGroupInvites()]);
-        startPresence();
-        onReady(true);
+      try {
+        // Enter the app when a profile exists; otherwise the user still has
+        // to pick a username (interrupted registration / first Google sign-in).
+        // During registration the profile is written a moment later by
+        // doRegister itself, so don't stack the setup modal on top of it.
+        if (!(await finalizeSignIn(user))) {
+          if (registering) return;
+          await completeProfileSetup(user);
+        }
+      } catch (err) {
+        // Never leave the user stuck on the auth view without a word.
+        setAuthError(friendlyDbError(err));
+        onReady(false);
       }
     } else {
       store.me = null;
@@ -46,13 +47,69 @@ export function initAuth({ onReady }) {
   });
 }
 
+// Shared "profile found → enter the app" path. Returns false when the
+// signed-in user has no profile document yet, so the caller can run profile
+// setup instead. The auth-state observer, the setup-modal Save and
+// registration all funnel through here: the observer alone never re-fires
+// after the profile is created mid-session, which used to leave new users
+// stuck on the login page after picking a username.
+async function finalizeSignIn(user) {
+  if (store.uid === user.uid && store.me) return true; // already entered
+  const snap = await getDoc(userRef(user.uid));
+  if (!snap.exists()) return false;
+  const data = { id: snap.id, ...snap.data() };
+  store.me = data;
+  store.uid = user.uid;
+  store.settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
+  try {
+    await Promise.all([loadFriendState(), loadBlocks(), loadGroupInvites()]);
+    startPresence();
+  } catch (err) {
+    // Never brick entering the app because a side-collection read failed
+    // (e.g. a missing composite index): enter anyway and warn in the console.
+    console.warn('[GeeChat] Some account state failed to load:', err?.code || '', err?.message || '');
+  }
+  authReadyCb?.(true);
+  return true;
+}
+
+// Firestore/other non-auth failures deserve honest messages, not "try again".
+function friendlyDbError(err) {
+  const code = err?.code || '';
+  const detail = String(err?.message || '');
+  if (/failed-precondition|requires an index/i.test(code + detail)) {
+    return 'A database index is missing. Run "firebase deploy --only firestore:indexes" (README §2, Step 3) or click the index link in the browser console error, then reload.';
+  }
+  if (/permission-denied/.test(code + detail)) {
+    return 'The database refused access. Deploy firestore.rules (README §2, Step 3) and reload.';
+  }
+  if (/not-found|NOT_FOUND|database/.test(code + detail)) {
+    return 'Cannot reach the Firestore database. Create it in the Firebase console (README §2, Step 3).';
+  }
+  if (/unavailable|network|failed/i.test(code + detail)) {
+    return 'Network error — the database is unreachable. Check your connection and try again.';
+  }
+  return friendlyAuthError(err);
+}
+
 // ---------- auth view ----------
 let pendingAvatar = null;
+let registering = false; // true while a registration is mid-flight (profile not yet written)
 
-export function showAuthView() {
+export function showAuthView(mode = 'login') {
+  qs('#landingView').classList.add('hidden');
   qs('#authView').classList.remove('hidden');
   qs('#appView').classList.add('hidden');
-  setMode('login');
+  setMode(mode);
+}
+
+// The marketing landing page — separate from the login screen. Boot shows
+// this first; the CTAs open the auth view, and the auth view's Home pill
+// returns here.
+export function showLandingView() {
+  qs('#landingView').classList.remove('hidden');
+  qs('#authView').classList.add('hidden');
+  qs('#appView').classList.add('hidden');
 }
 
 function setAuthError(msg) {
@@ -113,6 +170,7 @@ async function doRegister(e) {
 
   const btn = qs('#registerBtn');
   busy(btn, true);
+  registering = true;
   try {
     const lower = username.toLowerCase();
     if (!(await isUsernameAvailable(lower))) {
@@ -143,6 +201,9 @@ async function doRegister(e) {
       });
     });
     hideBanners();
+    // Enter the app right away — don't depend on the observer racing the
+    // just-committed profile transaction.
+    await finalizeSignIn(cred.user);
   } catch (err) {
     if (err.code === 'username-taken') {
       setAuthError('That username is already taken. Try another.');
@@ -152,8 +213,14 @@ async function doRegister(e) {
       setAuthError('An account with this email already exists. Sign in instead.');
     } else {
       setAuthError(friendlyAuthError(err));
+      // The auth account may exist without a profile — sign out so the
+      // next attempt starts clean instead of hanging in a half-created state.
+      if (fb.auth.currentUser) await signOut(fb.auth).catch(() => {});
     }
-  } finally { busy(btn, false); }
+  } finally {
+    registering = false;
+    busy(btn, false);
+  }
 }
 
 async function doLogin(e) {
@@ -245,6 +312,9 @@ function completeProfileSetup(user) {
         });
       });
       close();
+      // The profile now exists — enter the app deterministically (the
+      // auth-state observer will not re-fire for this session).
+      await finalizeSignIn(user);
     } catch (e2) {
       err.textContent = e2.code === 'username-taken' ? 'That username is already taken.' : e2.message;
       err.classList.remove('hidden');
@@ -276,6 +346,9 @@ export function initAuthUI() {
   qs('#registerForm').addEventListener('submit', doRegister);
   qs('#resetForm').addEventListener('submit', doReset);
   qs('#googleBtn').addEventListener('click', doGoogle);
+  qs('#ctaSignin').addEventListener('click', () => showAuthView('login'));
+  qs('#ctaRegister').addEventListener('click', () => showAuthView('register'));
+  qs('#authBack').addEventListener('click', showLandingView);
   qs('#switchAuthBtn').addEventListener('click', () => setMode(qs('#loginForm').classList.contains('hidden') ? 'login' : 'register'));
   qs('#forgotLink').addEventListener('click', () => setMode('reset'));
   qs('#resetBack').addEventListener('click', () => setMode('login'));

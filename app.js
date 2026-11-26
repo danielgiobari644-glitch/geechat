@@ -5,7 +5,7 @@ import {
   discoverGroups, searchUsers, ensureDm, ensureJoinRequest,
   markConvDelivered, persistLocalSettings,
 } from './database.js';
-import { initAuth, showAuthView, initAuthUI } from './auth.js';
+import { initAuth, showAuthView, showLandingView, initAuthUI } from './auth.js';
 import {
   el, qs, qsa, icon, avatarEl, hydrateIcons, toast, fmtTime, applyTheme, getThemePref, primeAudio,
 } from './ui.js';
@@ -55,12 +55,16 @@ qsa('.theme-pill').forEach(btn => {
 (async () => {
   const status = await checkPlatform();
   hideSplash();
-  if (!status.ok) { showSetupScreen(status); return; }
+  if (!status.ok) { showSetupScreen(status); window.__geechatBooted = true; return; }
   initAuthUI();
+  // Forms are wired and the auth observer is registered — from here the boot
+  // safety net in index.html stops intercepting native form submissions.
+  window.__geechatBooted = true;
   initAuth({
     onReady: async (authed) => {
       if (authed) await enterApp();
-      else showAuthView();
+      // Signed out at boot (or after logout): the landing page, not the form.
+      else showLandingView();
     },
   });
 })();
